@@ -15,7 +15,7 @@ contract Creator is ERC721Upgradeable, UUPSUpgradeable, AccessControlUpgradeable
     bytes32 public constant URI_SETTER_ROLE = keccak256("URI_SETTER_ROLE");
 
     uint256 public constant MAX_SUPPLY = 1_000_000;
-    uint256 public constant CREATOR_REGISTRATION_FEE = 200 * 10**6;
+    uint256 public creatorRegistrationFee = 12000 * 10**6;
 
     uint256 private _nextTokenId;
     string private _customBaseURI;
@@ -34,6 +34,7 @@ contract Creator is ERC721Upgradeable, UUPSUpgradeable, AccessControlUpgradeable
     event CreatorAdded(address indexed creator);
     event CreatorRegistrationFeeReceived(address indexed creator, uint256 amount);
     event MintPriceUpdated(address indexed creator, uint256 oldPrice, uint256 newPrice);
+    event RegistrationFeeUpdated(uint256 oldFee, uint256 newFee);
 
     constructor() {
         _disableInitializers();
@@ -58,21 +59,25 @@ contract Creator is ERC721Upgradeable, UUPSUpgradeable, AccessControlUpgradeable
         _grantRole(MINTER_ROLE, initialAdmin);
     }
 
-    function addCreator(address creatorAddress, uint256 mintPrice) public onlyRole(ADMIN_ROLE) {
-        _addCreator(creatorAddress, mintPrice);
+    function addCreator(address creatorAddress) public onlyRole(ADMIN_ROLE) {
+        _addCreator(creatorAddress);
     }
 
-    function addCreatorWithFee(address creatorAddress, uint256 mintPrice) public nonReentrant {
+    function addCreatorWithFee(address creatorAddress) public nonReentrant {
         require(
-            paymentToken.transferFrom(msg.sender, address(this), CREATOR_REGISTRATION_FEE),
+            paymentToken.transferFrom(msg.sender, address(this), creatorRegistrationFee),
             "Creator registration fee payment failed"
         );
 
-        _addCreator(creatorAddress, mintPrice);
-        emit CreatorRegistrationFeeReceived(creatorAddress, CREATOR_REGISTRATION_FEE);
+         require(creatorAddress != address(0), "Invalid creator address");
+        
+        _grantRole(MINTER_ROLE, creatorAddress);
+
+        _addCreator(creatorAddress);
+        emit CreatorRegistrationFeeReceived(creatorAddress, creatorRegistrationFee);
     }
 
-    function _addCreator(address creatorAddress, uint256 mintPrice) internal {
+    function _addCreator(address creatorAddress) internal {
         require(creatorAddress != address(0), "Invalid creator address");
         
         _grantRole(MINTER_ROLE, creatorAddress);
@@ -80,12 +85,14 @@ contract Creator is ERC721Upgradeable, UUPSUpgradeable, AccessControlUpgradeable
         emit CreatorAdded(creatorAddress);
     }
 
-    function updateMintPrice(uint256 newMintPrice) public {
-
-        require(newMintPrice > 0, "Invalid price");
+    function updateRegistrationFee(uint256 newRegistrationFee) public onlyRole(ADMIN_ROLE) {
+        require(newRegistrationFee > 0, "Invalid registration fee");
+        uint256 oldFee = creatorRegistrationFee;
+        creatorRegistrationFee = newRegistrationFee;
+        emit RegistrationFeeUpdated(oldFee, newRegistrationFee);
     }
 
-   
+
     function getCreatorTokenIds(address creator) public view returns (uint32[] memory) {
         return _creatorTokenIds[creator];
     }

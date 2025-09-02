@@ -1,6 +1,8 @@
 # Virtual environment
 myenv
 
+.states
+
 # Libraries and dependencies
 lib
 lib/openzeppelin-contracts-upgradeable

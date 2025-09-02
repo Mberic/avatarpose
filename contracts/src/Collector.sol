@@ -5,6 +5,7 @@ import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/utils/Strings.sol";
 
 contract Collector is ERC721, AccessControl, ReentrancyGuard {
     // Define roles
@@ -13,26 +14,24 @@ contract Collector is ERC721, AccessControl, ReentrancyGuard {
     bytes32 public constant URI_SETTER_ROLE = keccak256("URI_SETTER_ROLE");
 
     uint256 private _nextTokenId;
-    mapping(uint256 => string) private _tokenURIs;
-    string private _customBaseURI;
 
     IERC20 public paymentToken;
-    uint256 public constant MINT_PRICE = 20 * 10**6; // 20 tokens (assuming 6 decimals)
+    uint256 public mintPrice = 20 * 10**6; // 20 tokens (assuming 6 decimals)
 
+    mapping(uint256 => string) private _tokenURIs;
     mapping(address => uint256) public minterAllowance;
+    using Strings for uint256;
 
     // Events
-    event BaseURIUpdated(string newURI);
     event TokenURISet(uint256 indexed tokenId, string uri);
     event PaymentReceived(address indexed from, uint256 amount);
     event PaymentWithdrawn(address indexed to, uint256 amount);
     event MinterRoleGranted(address indexed account, uint256 allowance);
     event MinterRoleRevoked(address indexed account);
 
-    constructor(string memory name, string memory symbol, address initialAdmin, string memory baseURI, address tokenAddress)
+    constructor(string memory name, string memory symbol, address initialAdmin, address tokenAddress)
         ERC721(name, symbol)
     {
-        _customBaseURI = baseURI;
         paymentToken = IERC20(tokenAddress);
 
         _grantRole(DEFAULT_ADMIN_ROLE, initialAdmin);
@@ -60,7 +59,7 @@ contract Collector is ERC721, AccessControl, ReentrancyGuard {
 
     function mint(string memory newTokenURI) public nonReentrant returns (uint256) {
         require(
-            paymentToken.transferFrom(msg.sender, address(this), MINT_PRICE),
+            paymentToken.transferFrom(msg.sender, address(this), mintPrice),
             "Token payment failed"
         );
 
@@ -68,13 +67,13 @@ contract Collector is ERC721, AccessControl, ReentrancyGuard {
         _safeMint(msg.sender, tokenId);
         _setTokenURI(tokenId, newTokenURI);
 
-        emit PaymentReceived(msg.sender, MINT_PRICE);
+        emit PaymentReceived(msg.sender, mintPrice);
 
         return tokenId;
     }
 
-    function tokenURI(uint256 tokenId) public view override returns (string memory) {
-        _requireOwned(tokenId);
+   function tokenURI(uint256 tokenId) public view override returns (string memory) {
+        require(_exists(tokenId), "ERC721Metadata: URI query for nonexistent token");
 
         string memory _tokenURI = _tokenURIs[tokenId];
 
@@ -82,26 +81,14 @@ contract Collector is ERC721, AccessControl, ReentrancyGuard {
             return _tokenURI;
         }
 
-        return string(abi.encodePacked(_customBaseURI, toString(tokenId)));
+        // fallback to default ERC721 behavior (baseURI + tokenId)
+        string memory base = _baseURI();
+        return bytes(base).length > 0 ? string(abi.encodePacked(base, tokenId.toString())) : "";
     }
 
-    function toString(uint256 value) internal pure returns (string memory) {
-        if (value == 0) {
-            return "0";
-        }
-        uint256 temp = value;
-        uint256 digits;
-        while (temp != 0) {
-            digits++;
-            temp /= 10;
-        }
-        bytes memory buffer = new bytes(digits);
-        while (value != 0) {
-            digits -= 1;
-            buffer[digits] = bytes1(uint8(48 + uint256(value % 10)));
-            value /= 10;
-        }
-        return string(buffer);
+
+    function setMintPrice(uint256 newPrice) public onlyRole(ADMIN_ROLE) {
+        mintPrice = newPrice;
     }
 
     function _setTokenURI(uint256 tokenId, string memory _tokenURI) internal {
@@ -109,13 +96,8 @@ contract Collector is ERC721, AccessControl, ReentrancyGuard {
         emit TokenURISet(tokenId, _tokenURI);
     }
 
-    function setBaseURI(string memory newURI) public onlyRole(URI_SETTER_ROLE) {
-        _customBaseURI = newURI;
-        emit BaseURIUpdated(newURI);
-    }
-
     function setTokenURI(uint256 tokenId, string memory newURI) public onlyRole(URI_SETTER_ROLE) {
-        require(_exists(tokenId), "URI set of nonexistent token");
+        require(_exists(tokenId), "URI set for nonexistent token");
         _setTokenURI(tokenId, newURI);
     }
 
@@ -131,15 +113,6 @@ contract Collector is ERC721, AccessControl, ReentrancyGuard {
 
         emit PaymentWithdrawn(admin, balance);
         require(paymentToken.transfer(admin, balance), "Token transfer failed");
-    }
-
-    function supportsInterface(bytes4 interfaceId)
-        public
-        view
-        override(ERC721, AccessControl)
-        returns (bool)
-    {
-        return super.supportsInterface(interfaceId);
     }
 
     function grantMinterRole(address account, uint256 allowance) public onlyRole(DEFAULT_ADMIN_ROLE) {
@@ -169,4 +142,14 @@ contract Collector is ERC721, AccessControl, ReentrancyGuard {
     function revokeAdminRole(address account) public onlyRole(DEFAULT_ADMIN_ROLE) {
         _revokeRole(ADMIN_ROLE, account);
     }
+
+    function supportsInterface(bytes4 interfaceId)
+        public
+        view
+        override(ERC721, AccessControl)
+        returns (bool)
+    {
+        return super.supportsInterface(interfaceId);
+    }
+
 }
