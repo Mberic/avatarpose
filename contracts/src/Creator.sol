@@ -15,7 +15,7 @@ contract Creator is ERC721Upgradeable, UUPSUpgradeable, AccessControlUpgradeable
     bytes32 public constant URI_SETTER_ROLE = keccak256("URI_SETTER_ROLE");
 
     uint256 public constant MAX_SUPPLY = 1_000_000;
-    uint256 public creatorRegistrationFee = 12000 * 10**6;
+    uint256 public creatorRegistrationFee = 12_000 * 10**6;
 
     uint256 private _nextTokenId;
     string private _customBaseURI;
@@ -23,6 +23,8 @@ contract Creator is ERC721Upgradeable, UUPSUpgradeable, AccessControlUpgradeable
     IERC20 public paymentToken;
     using Strings for uint256;
 
+    uint256 public constant CREATOR_MINT_ALLOWANCE = 500;
+    mapping(address => uint256) private _creatorMintCount;
     mapping(uint256 => string) private _tokenURIs;
     mapping(address => uint32[]) private _creatorTokenIds;
 
@@ -35,6 +37,7 @@ contract Creator is ERC721Upgradeable, UUPSUpgradeable, AccessControlUpgradeable
     event CreatorRegistrationFeeReceived(address indexed creator, uint256 amount);
     event MintPriceUpdated(address indexed creator, uint256 oldPrice, uint256 newPrice);
     event RegistrationFeeUpdated(uint256 oldFee, uint256 newFee);
+    event TokenMinted(address indexed creator, address indexed to, uint256 indexed tokenId);
 
     constructor() {
         _disableInitializers();
@@ -46,7 +49,7 @@ contract Creator is ERC721Upgradeable, UUPSUpgradeable, AccessControlUpgradeable
         address initialAdmin,
         string memory baseURI,
         address tokenAddress
-    ) public initializer onlyRole(ADMIN_ROLE) {
+    ) public initializer {
         paymentToken = IERC20(tokenAddress);
         _customBaseURI = baseURI;
 
@@ -57,6 +60,24 @@ contract Creator is ERC721Upgradeable, UUPSUpgradeable, AccessControlUpgradeable
         _grantRole(ADMIN_ROLE, initialAdmin);
         _grantRole(URI_SETTER_ROLE, initialAdmin);
         _grantRole(MINTER_ROLE, initialAdmin);
+    }
+
+    function mint(address to, string memory uri) public onlyRole(MINTER_ROLE) nonReentrant {
+        require(_nextTokenId < MAX_SUPPLY, "Max supply reached");
+        require(_creatorMintCount[msg.sender] < CREATOR_MINT_ALLOWANCE, "Creator mint allowance exceeded");
+        
+        uint256 tokenId = _nextTokenId;
+        _nextTokenId++;
+        
+        _safeMint(to, tokenId);
+        _creatorMintCount[msg.sender]++;
+        _creatorTokenIds[msg.sender].push(uint32(tokenId));
+        
+        if (bytes(uri).length > 0) {
+            _setTokenURI(tokenId, uri);
+        }
+
+        emit TokenMinted(msg.sender, to, tokenId);
     }
 
     function addCreator(address creatorAddress) public onlyRole(ADMIN_ROLE) {
@@ -86,7 +107,7 @@ contract Creator is ERC721Upgradeable, UUPSUpgradeable, AccessControlUpgradeable
     }
 
     function updateRegistrationFee(uint256 newRegistrationFee) public onlyRole(ADMIN_ROLE) {
-        require(newRegistrationFee > 0, "Invalid registration fee");
+        
         uint256 oldFee = creatorRegistrationFee;
         creatorRegistrationFee = newRegistrationFee;
         emit RegistrationFeeUpdated(oldFee, newRegistrationFee);
@@ -95,6 +116,14 @@ contract Creator is ERC721Upgradeable, UUPSUpgradeable, AccessControlUpgradeable
 
     function getCreatorTokenIds(address creator) public view returns (uint32[] memory) {
         return _creatorTokenIds[creator];
+    }
+
+    function getCreatorMintCount(address creator) public view returns (uint256) {
+        return _creatorMintCount[creator];
+    }
+
+    function getRemainingMints(address creator) public view returns (uint256) {
+        return CREATOR_MINT_ALLOWANCE - _creatorMintCount[creator];
     }
 
     function tokenURI(uint256 tokenId) public view override returns (string memory) {
