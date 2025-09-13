@@ -11,8 +11,10 @@ optimizer_details = { jumpdestRemover = true, orderLiterals = true, deduplicate 
 memory_limit = 34359738368
 ffi = true
 force = true
+ast = true
 
 # Additional settings
 sparse_mode = true
 build_info = true
 extra_output = ["storageLayout"]
+
